@@ -1,0 +1,162 @@
+heat_template_version: 2013-05-23
+
+description: Heat template to deploy Open Source CHEF server on a VM
+
+parameters:
+
+  ssh_key_name:
+    type: string
+    label: Key Pair name
+    description : Name of the key pair to enable SSH access to the instance. See Access-Security, Key Pair.
+
+  flavor_name:
+    type: string
+    label: Flavor Name
+    description: Instance type for the server
+    default: m1.small
+    constraints:
+      - allowed_values: [m1.small, m1.medium]
+        description: flavor_name must be one of m1.small or m1.medium
+
+  root_password:
+    label: root password
+    default: secrete
+    hidden: true
+    description: root password for chef server
+    type: string
+    constraints:
+    - length: { min: 4, max: 25 }
+      description: Password MUST be between 1 - 25 characters.
+
+  private_net_id:
+    type: string
+    default: 2031202f-ff49-4708-bfff-a25c2a85fa79
+    description: Private network id
+
+  private_subnet_id:
+    type: string
+    default: 7a107e89-b696-4192-860f-d7b799c873b3
+    description: Private subnet id
+
+  public_net_id:
+    type: string
+    default: 64bee991-391a-44a1-963a-8fa40d1d4398
+    description: Public network id
+
+
+
+resources:
+
+  server:
+    type: OS::Nova::Server
+    properties:
+      name: chefserver
+      flavor: { get_param: flavor_name }
+      image: ubuntu-14.04-server-cloudimg-amd64-disk1
+      key_name: { get_param: ssh_key_name }
+      networks:
+        - port: { get_resource: server_port }
+      user_data:
+        str_replace:
+          template: |
+            #!/usr/bin/env bash
+            set -v
+            # Root password
+            sudo echo root:%root_password% | chpasswd
+            # Set the systems IP ADDRESS
+            SYSIP=$(/sbin/ifconfig eth0 | sed -n '/inet /{s/.*addr://;s/ .*//;p}')
+            HOST="$(hostname)"
+            sudo echo "" >> /etc/hosts
+            sudo echo "# Added by Openstack HEAT Template" >> /etc/hosts
+            sudo echo "$SYSIP     $HOST" >> /etc/hosts
+            CHEF_URL="https://www.opscode.com"
+            if [ -f "/etc/redhat-release"  ];then
+              CHEF="${CHEF_URL}/chef/download-server?p=el&pv=6&m=x86_64"
+              wget -O /tmp/chef_server.rpm ${CHEF}
+              sudo yum install -y /tmp/chef_server.rpm
+            elif [ "$(grep -i ubuntu /etc/lsb-release)" ];then
+              CHEF="${CHEF_URL}/chef/download-server?p=ubuntu&pv=12.04&m=x86_64"
+              wget -O /tmp/chef_server.deb ${CHEF}
+              sudo dpkg -i /tmp/chef_server.deb
+            else
+              echo "The OS has detection failed."
+              exit 1
+            fi
+            sudo chef-server-ctl reconfigure
+
+            # Install Chef Client
+            bash <(wget -O - http://opscode.com/chef/install.sh)
+
+            # Configure Knife
+            mkdir -p /root/.chef
+            cat > /root/.chef/knife.rb <<EOF
+            log_level                :info
+            log_location             STDOUT
+            node_name                'admin'
+            client_key               '/etc/chef-server/admin.pem'
+            validation_client_name   'chef-validator'
+            validation_key           '/etc/chef-server/chef-validator.pem'
+            chef_server_url          "https://${SYSIP}:8000"
+            cache_options( :path => '/root/.chef/checksums' )
+            EOF
+
+          params:
+            "%root_password%": { get_param: root_password }
+
+  server_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_param: private_net_id }
+      fixed_ips:
+        - subnet_id: { get_param: private_subnet_id }
+      security_groups: [{ get_resource: security_group }]
+
+  floating_ip:
+    type: OS::Neutron::FloatingIP
+    properties:
+      floating_network_id: { get_param: public_net_id }
+      port_id: { get_resource: server_port }
+
+  security_group:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      description: Add security group rules for server
+      name: chef-server
+      rules:
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 8000
+          port_range_max: 8000
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 80
+          port_range_max: 80
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: tcp
+          port_range_min: 443
+          port_range_max: 443
+        - remote_ip_prefix: 0.0.0.0/0
+          protocol: icmp
+
+
+outputs:
+
+  server_private_ip:
+    description: IP address of Chef Server in private network
+    value: { get_attr: [ server, first_address ] }
+  server_public_ip:
+    description: Floating IP address of Chef Server in public network
+    value: { get_attr: [ floating_ip, floating_ip_address ] }
+  server_url:
+    description: The URL for the Chef Server
+    value:
+      str_replace:
+        template: https://%host%
+        params:
+          "%host%": { get_attr: [ floating_ip, floating_ip_address ] }
+
+
