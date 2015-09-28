@@ -1,0 +1,56 @@
+heat_template_version: 2015-04-30
+
+description: Keystone Group template
+
+parameters:
+  group_name:
+    label: Group
+    type: string
+    description: Keystone group name
+    
+  group_description:
+    label: Description
+    type: string
+    description: Keystone group description
+
+  group_project:
+    label: Project
+    type: string
+    description: group role project
+    
+  group_role_project:
+    label: Project Role
+    type: string
+    description: Project Role
+
+  group_domain:
+    label: Domain
+    type: string
+    description: Keystone group domain name
+    
+  group_role_domain:
+    label: Domain role
+    type: string
+    description: Group role Domain
+
+
+resources:
+  admin_group:
+    type: OS::Keystone::Group
+    properties:
+      name: {get_param: group_name}
+      domain: {get_param: group_domain}
+      description: {get_param: group_description}
+      roles:
+        - role: {get_param: group_role_domain}
+          domain: {get_param: group_domain}
+        - role: {get_param: group_role_project}
+          project: {get_param: group_project}
+
+
+outputs:
+  admin_group_id:
+    value: {get_resource: admin_group}
+    description: keystone admin group identifier
+
+

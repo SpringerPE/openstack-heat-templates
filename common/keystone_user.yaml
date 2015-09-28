@@ -1,0 +1,73 @@
+heat_template_version: 2015-04-30
+
+description: Keystone User template
+
+parameters:
+
+  user_name:
+    label: Username
+    type: string
+    description: Keystone user name
+
+  user_description:
+    label: Description
+    type: string
+    description: Keystone user description
+
+  user_enabled:
+    label: Enabled
+    type: boolean
+    description: Keystone user is enabled or disabled
+    default: true
+
+  user_domain:
+    label: Domain
+    type: string
+    description: Keystone user domain name
+
+  user_email:
+    label: Email
+    type: string
+    description: Keystone user email
+
+  user_password:
+    label: Password
+    type: string
+    description: Keystone user password
+
+  user_groups:
+    label: Groups
+    type: comma_delimited_list
+    description: Keystone groups, where this user is part of
+
+  user_project:
+    label: Project
+    type: string
+    description: Default/Main administrator project
+
+  user_role_project:
+    label: Role
+    type: string
+    description: Role within the project
+
+resources:
+  admin_user:
+    type: OS::Keystone::User
+    properties:
+      name: {get_param: user_name}
+      domain: {get_param: user_domain}
+      description: {get_param: user_description}
+      enabled: {get_param: user_enabled}
+      email: {get_param: user_email}
+      password: {get_param: user_password}
+      groups: {get_param: user_groups}
+      roles:
+        - role: {get_param: user_role_project}
+          project: {get_param: user_project}
+
+outputs:
+  admin_user_id:
+    value: {get_resource: admin_user}
+    description: keystone user identifier
+
+

@@ -1,0 +1,23 @@
+heat_template_version: 2015-04-30
+
+description: Keystone admin Role template
+
+parameters:
+  role_name:
+    label: Role
+    type: string
+    description: Keystone role name
+
+
+resources:
+  admin_role:
+    type: OS::Keystone::Role
+    properties:
+      name: {get_param: role_name}
+
+
+outputs:
+  admin_role_id:
+    value: {get_resource: admin_role}
+    description: keystone admin role identifier
+    

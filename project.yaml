@@ -1,0 +1,133 @@
+heat_template_version: 2013-05-23
+
+description: >
+  This is a HOT template to create:
+  * Roles: user (domain role) and admin (project role)
+  * Project: It creates a project
+  * Groups: <project>-admin (for the admin user within the project) and <project>-user (for regular users)
+  * User: <project> (the admin user of the project, name is the same as the project)
+  * Networking: It creates a default internal network for the project
+
+
+parameters:
+
+  project:
+    type: string
+    description: Name of the new project
+
+  description:
+    type: string
+    description: Description of the new project
+
+  email:
+    label: Admid email
+    type: string
+    description: Email for admin user
+    
+  password:
+    label: Admin password
+    type: string
+    description: Password for admin user
+
+
+resources:
+
+  role_project:
+    type: OS::Heat::Stack
+    properties:
+      template: { get_file: "common/keystone_role.yaml" }
+      timeout: 60
+      parameters:
+        role_name: admin
+
+  role_domain:
+    type: OS::Heat::Stack
+    properties:
+      template: { get_file: "common/keystone_role.yaml" }
+      timeout: 60
+      parameters:
+        role_name: user
+
+  project:
+    type: OS::Heat::Stack
+    properties:
+      template: { get_file: "common/keystone_project.yaml" }
+      timeout: 60
+      parameters:
+        project_name: { get_param: project }
+        project_description: { get_param: project_desc }
+        project_enabled: true
+        project_domain: spr
+    
+  group_admin_project:
+    type: OS::Heat::Stack
+    properties:
+      template: { get_file: "common/keystone_group.yaml" }
+      timeout: 60
+      parameters:
+        group_name:
+          str_replace:
+            template: $name-admin
+            params:
+               $name: { get_param: project }
+        group_description: Admin Project Group
+        group_project: { get_param: project }
+        group_role_project: admin
+        group_domain: spr
+        group_role_domain: user
+
+  group_user_project:
+    type: OS::Heat::Stack
+    properties:
+      template: { get_file: "common/keystone_group.yaml" }
+      timeout: 60
+      parameters:
+        group_name:
+          str_replace:
+            template: $name-user
+            params:
+               $name: { get_param: project }
+        group_description: User Project Group
+        group_project: { get_param: project }
+        group_role_project: user
+        group_domain: spr
+        group_role_domain: user
+
+  user_admin_project:
+    type: OS::Heat::Stack
+    properties:
+      template: { get_file: "common/keystone_user.yaml" }
+      timeout: 60
+      parameters:
+        user_name: { get_param: project }
+        user_description: User Project Admin
+        user_domain: spr
+        user_email: { get_param: email }
+        user_password: { get_param: password }
+        user_project: { get_param: project }
+        user_groups:
+          repeat:
+             for_each:
+                $name: { get_param: project }
+                $group: ['admin', 'user']
+             template: $name-$group
+
+  neutron:
+    type: OS::Heat::Stack
+    properties:
+      template: { get_file: "common/neutron.yaml" }
+      timeout: 60
+      parameters:
+        project: { get_param: project }
+        private_net_cidr: 10.0.0.0/24
+        private_net_gateway: 10.0.0.1    
+        private_net_pool_start: 10.0.0.10    
+        private_net_pool_end: 10.0.0.255
+        private_net_nameservers: 8.8.8.8
+
+outputs:
+  project_outputs:
+    label: Output
+    description: Output values
+    value: { get_attr: [user_admin_project, outputs] }
+
